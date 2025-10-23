@@ -1,7 +1,5 @@
 import os
 import logging
-import datetime
-import random
 from telegram import (
     Update, 
     ReplyKeyboardMarkup, 
@@ -16,13 +14,21 @@ from telegram.ext import (
     ConversationHandler
 )
 
-# Токен из переменных окружения Railway
-BOT_TOKEN = os.environ['BOT_TOKEN']
-
+# Настройка логирования для Railway
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+logger = logging.getLogger(__name__)
+
+# Токен из переменных окружения Railway
+BOT_TOKEN = os.environ.get('BOT_TOKEN')
+
+if not BOT_TOKEN:
+    logger.error("❌ BOT_TOKEN не найден!")
+    exit(1)
+
+logger.info("✅ BOT_TOKEN загружен")
 
 MONTH, YEAR, ZODIAC = range(3)
 user_data = {}
@@ -32,17 +38,21 @@ MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май'
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start"""
-    keyboard = [['✨ Узнать свою судьбу'], ['🔄 Перезапустить']]
+    logger.info(f"Пользователь {update.message.from_user.id} запустил бота")
+    
+    keyboard = [['✨ Узнать свою судьбу']]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
     await update.message.reply_text(
-        "🔮 *Предсказание*\n*Узнай свою судьбу*\n\nНажми на кнопку ниже чтобы начать! ✨",
+        "🔮 *Предсказание*\n*Узнай свою судьбу*\n\nНажми кнопку ниже чтобы начать! ✨",
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
 
 async def start_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Начинает диалог"""
+    logger.info("Начало диалога")
+    
     keyboard = [
         ['Январь', 'Февраль', 'Март'],
         ['Апрель', 'Май', 'Июнь'],
@@ -52,44 +62,36 @@ async def start_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE)
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
     await update.message.reply_text(
-        f'🔮 Привет! Выбери месяц рождения:',
+        '🔮 Выбери месяц рождения:',
         reply_markup=reply_markup
     )
     return MONTH
 
 async def month_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     month = update.message.text
+    logger.info(f"Выбран месяц: {month}")
+    
     if month not in MONTHS:
-        keyboard = [
-            ['Январь', 'Февраль', 'Март'],
-            ['Апрель', 'Май', 'Июнь'],
-            ['Июль', 'Август', 'Сентябрь'],
-            ['Октябрь', 'Ноябрь', 'Декабрь']
-        ]
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-        await update.message.reply_text('❌ Выбери месяц из списка:', reply_markup=reply_markup)
+        await update.message.reply_text('❌ Выбери месяц из списка:')
         return MONTH
     
     context.user_data['month'] = month
     await update.message.reply_text(
-        f'✅ Месяц "{month}" сохранен.\n\nВведи год рождения (4 цифры):',
+        f'✅ Месяц сохранен. Введи год (4 цифры):',
         reply_markup=ReplyKeyboardRemove()
     )
     return YEAR
 
 async def year_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     year = update.message.text
+    logger.info(f"Введен год: {year}")
+    
     if not year.isdigit() or len(year) != 4:
         await update.message.reply_text('❌ Введите корректный год (4 цифры):')
         return YEAR
     
-    year_int = int(year)
-    current_year = datetime.datetime.now().year
-    if year_int < 1900 or year_int > current_year:
-        await update.message.reply_text(f'❌ Введите реальный год (1900-{current_year}):')
-        return YEAR
-    
     context.user_data['year'] = year
+    
     keyboard = [
         ['Овен', 'Телец', 'Близнецы'],
         ['Рак', 'Лев', 'Дева'],
@@ -103,73 +105,50 @@ async def year_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     return ZODIAC
 
 async def zodiac_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    zodiac = update.message.text.lower()
-    if zodiac not in [z.lower() for z in ZODIAC_SIGNS]:
-        keyboard = [
-            ['Овен', 'Телец', 'Близнецы'],
-            ['Рак', 'Лев', 'Дева'],
-            ['Весы', 'Скорпион', 'Стрелец'],
-            ['Козерог', 'Водолей', 'Рыбы']
-        ]
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-        await update.message.reply_text('❌ Выбери знак из списка:', reply_markup=reply_markup)
+    zodiac = update.message.text
+    logger.info(f"Выбран знак: {zodiac}")
+    
+    if zodiac.lower() not in [z.lower() for z in ZODIAC_SIGNS]:
+        await update.message.reply_text('❌ Выбери знак из списка:')
         return ZODIAC
     
     context.user_data['zodiac'] = zodiac
-    user_data[update.message.from_user.id] = context.user_data.copy()
+    user_id = update.message.from_user.id
+    user_data[user_id] = context.user_data.copy()
     
-    keyboard = [['🔮 Получить гороскоп на сегодня'], ['🔄 Перезапустить']]
+    keyboard = [['🔮 Получить гороскоп']]
     await update.message.reply_text(
-        f'✅ Профиль сохранен! Знак: {zodiac.title()}',
+        f'✅ Профиль сохранен! Знак: {zodiac}',
         reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     )
     return ConversationHandler.END
 
 async def show_horoscope(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
+    logger.info(f"Запрос гороскопа от пользователя {user_id}")
+    
     if user_id in user_data:
         zodiac = user_data[user_id]['zodiac']
         horoscope = get_daily_horoscope(zodiac)
-        
-        await update.message.reply_text(
-            f'✨ *Гороскоп для {zodiac.title()}*\n'
-            f'📅 На сегодня: {datetime.datetime.now().strftime("%d.%m.%Y")}\n\n'
-            f'{horoscope}',
-            parse_mode='Markdown'
-        )
+        await update.message.reply_text(f'✨ {zodiac}:\n{horoscope}')
     else:
         await update.message.reply_text('❌ Сначала настрой профиль: /start')
 
-async def restart_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    if user_id in user_data:
-        del user_data[user_id]
-    context.user_data.clear()
-    
-    keyboard = [['✨ Узнать свою судьбу'], ['🔄 Перезапустить']]
-    await update.message.reply_text(
-        '🔄 Бот перезапущен! Нажми кнопку ниже чтобы начать заново!',
-        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    )
-
 async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
+    logger.info(f"Текстовое сообщение: {text}")
+    
     if text == '✨ Узнать свою судьбу':
         await start_conversation(update, context)
-    elif text == '🔮 Получить гороскоп на сегодня':
+    elif text == '🔮 Получить гороскоп':
         await show_horoscope(update, context)
-    elif text == '🔄 Перезапустить':
-        await restart_bot(update, context)
 
 def get_daily_horoscope(zodiac_sign):
-    today = datetime.datetime.now()
-    random.seed(f"{zodiac_sign}_{today.strftime('%Y%m%d')}")
-    
     horoscopes = {
-        'овен': "♈ Сегодня звезды благоприятствуют новым начинаниям! Смело беритесь за интересные проекты.",
-        'телец': "♉ Хороший день для финансовых операций. Возможны неожиданные поступления.",
-        'близнецы': "♊ Вас ждет интересное знакомство. Будьте открыты для общения.",
-        'рак': "♋ Позаботьтесь о своем эмоциональном состоянии. Вечер проведите в спокойной обстановке.",
+        'овен': "♈ Сегодня звезды благоприятствуют новым начинаниям!",
+        'телец': "♉ Хороший день для финансовых операций.",
+        'близнецы': "♊ Вас ждет интересное знакомство.",
+        'рак': "♋ Позаботьтесь о своем эмоциональном состоянии.",
         'лев': "♌ Ваша харизма на высоте - используйте это!",
         'дева': "♍ День подходит для планирования и анализа.",
         'весы': "♎ Важны гармония в отношениях и компромиссы.",
@@ -182,27 +161,35 @@ def get_daily_horoscope(zodiac_sign):
     return horoscopes.get(zodiac_sign.lower(), "🔮 Гороскоп временно недоступен.")
 
 def main():
-    application = Application.builder().token(BOT_TOKEN).build()
-    
-    conv_handler = ConversationHandler(
-        entry_points=[
-            MessageHandler(filters.TEXT & filters.Regex('^✨ Узнать свою судьбу$'), start_conversation),
-            CommandHandler("start", start_conversation)
-        ],
-        states={
-            MONTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, month_handler)],
-            YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, year_handler)],
-            ZODIAC: [MessageHandler(filters.TEXT & ~filters.COMMAND, zodiac_handler)],
-        },
-        fallbacks=[CommandHandler("restart", restart_bot)]
-    )
-    
-    application.add_handler(conv_handler)
-    application.add_handler(CommandHandler("restart", restart_bot))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
-    
-    print("✅ Бот запущен на Railway!")
-    application.run_polling()
+    try:
+        logger.info("🚀 Запуск бота...")
+        
+        application = Application.builder().token(BOT_TOKEN).build()
+        
+        conv_handler = ConversationHandler(
+            entry_points=[
+                MessageHandler(filters.TEXT & filters.Regex('^✨ Узнать свою судьбу$'), start_conversation),
+                CommandHandler("start", start_conversation)
+            ],
+            states={
+                MONTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, month_handler)],
+                YEAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, year_handler)],
+                ZODIAC: [MessageHandler(filters.TEXT & ~filters.COMMAND, zodiac_handler)],
+            },
+            fallbacks=[]
+        )
+        
+        application.add_handler(conv_handler)
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+        
+        logger.info("✅ Бот успешно запущен на Railway!")
+        logger.info("🤖 Ожидание сообщений...")
+        
+        application.run_polling()
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка при запуске: {e}")
+        exit(1)
 
 if __name__ == '__main__':
     main()
